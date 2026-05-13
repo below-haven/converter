@@ -23,41 +23,62 @@ final class TinyToEnigmaConverterTest {
 	void freshTinyToEnigmaConversion() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
-				\tf\tI\tb\tfield_1
-				\tm\t(Lcom/example/x;)V\ta\tmethod_1
+				c\tcom/example/Readable\tClass123
+				\tf\tI\tfieldReadable\tfield_1
+				\tm\t(Lcom/example/Readable;)V\tuseMe\tmethod_1
 				""");
 		Path output = tempDir.resolve("output.enigma");
 
 		new TinyToEnigmaConverter().convert(input, output);
 
 		String enigma = Files.readString(output);
-		assertTrue(enigma.contains("CLASS Class123 com/example/x"));
-		assertTrue(enigma.contains("FIELD field_1 b I"));
-		assertTrue(enigma.contains("METHOD method_1 a (LClass123;)V"));
+		assertTrue(enigma.contains("CLASS Class123 com/example/Readable"));
+		assertTrue(enigma.contains("FIELD field_1 fieldReadable I"));
+		assertTrue(enigma.contains("METHOD method_1 useMe (LClass123;)V"));
+	}
+
+	@Test
+	void obfuscatedOfficialNamesStayUnmapped() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\ta/b/x\tClass123
+				\tf\tI\tb\tfield_1
+				\tm\t()V\ta\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS Class123\n"));
+		assertTrue(enigma.contains("FIELD field_1 I"));
+		assertTrue(enigma.contains("METHOD method_1 ()V"));
+		assertFalse(enigma.contains("a/b/x"));
+		assertFalse(enigma.contains("FIELD field_1 b I"));
+		assertFalse(enigma.contains("METHOD method_1 a ()V"));
 	}
 
 	@Test
 	void existingManualNamesSurviveOfficialNameChanges() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
-				\tf\tI\tb\tfield_1
-				\tm\t()V\ta\tmethod_1
+				c\tcom/example/Readable\tClass123
+				\tf\tI\tfieldReadable\tfield_1
+				\tm\t()V\tmethodReadable\tmethod_1
 				""");
 		Path output = tempDir.resolve("output.enigma");
 		new TinyToEnigmaConverter().convert(input, output);
 		String edited = Files.readString(output)
-				.replace("com/example/x", "human/readable/Name")
-				.replace(" b I", " readableField I")
-				.replace(" a ()V", " readableMethod ()V");
+				.replace("com/example/Readable", "human/readable/Name")
+				.replace(" fieldReadable I", " readableField I")
+				.replace(" methodReadable ()V", " readableMethod ()V");
 		Files.writeString(output, edited);
 
 		Files.writeString(input, """
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/y\tClass123
-				\tf\tI\tc\tfield_1
-				\tm\t()V\tz\tmethod_1
+				c\tcom/example/Changed\tClass123
+				\tf\tI\tfieldChanged\tfield_1
+				\tm\t()V\tmethodChanged\tmethod_1
 				""");
 
 		new TinyToEnigmaConverter().convert(input, output);
@@ -66,28 +87,28 @@ final class TinyToEnigmaConverterTest {
 		assertTrue(enigma.contains("CLASS Class123 human/readable/Name"));
 		assertTrue(enigma.contains("FIELD field_1 readableField I"));
 		assertTrue(enigma.contains("METHOD method_1 readableMethod ()V"));
-		assertFalse(enigma.contains("com/example/y"));
+		assertFalse(enigma.contains("com/example/Changed"));
 	}
 
 	@Test
 	void removedTinyEntriesDisappear() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
-				\tf\tI\tb\tfield_1
-				c\tcom/example/y\tClass456
+				c\tcom/example/Readable\tClass123
+				\tf\tI\tfieldReadable\tfield_1
+				c\tcom/example/OtherReadable\tClass456
 				""");
 		Path output = tempDir.resolve("output.enigma");
 		new TinyToEnigmaConverter().convert(input, output);
 
 		Files.writeString(input, """
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
+				c\tcom/example/Readable\tClass123
 				""");
 		new TinyToEnigmaConverter().convert(input, output);
 
 		String enigma = Files.readString(output);
-		assertTrue(enigma.contains("CLASS Class123 com/example/x"));
+		assertTrue(enigma.contains("CLASS Class123 com/example/Readable"));
 		assertFalse(enigma.contains("field_1"));
 		assertFalse(enigma.contains("Class456"));
 	}
@@ -96,17 +117,17 @@ final class TinyToEnigmaConverterTest {
 	void uniqueDescriptorChangePreservesExistingName() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
-				\tm\t()V\ta\tmethod_1
+				c\tcom/example/Readable\tClass123
+				\tm\t()V\tmethodReadable\tmethod_1
 				""");
 		Path output = tempDir.resolve("output.enigma");
 		new TinyToEnigmaConverter().convert(input, output);
-		Files.writeString(output, Files.readString(output).replace(" a ()V", " readableMethod ()V"));
+		Files.writeString(output, Files.readString(output).replace(" methodReadable ()V", " readableMethod ()V"));
 
 		Files.writeString(input, """
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
-				\tm\t(I)V\ta\tmethod_1
+				c\tcom/example/Readable\tClass123
+				\tm\t(I)V\tmethodReadable\tmethod_1
 				""");
 
 		new TinyToEnigmaConverter().convert(input, output);
@@ -118,7 +139,7 @@ final class TinyToEnigmaConverterTest {
 	void ambiguousDescriptorChangeFailsWithoutOverwriting() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
+				c\tcom/example/Readable\tClass123
 				\tm\t()V\ta\tmethod_1
 				\tm\t(I)V\tb\tmethod_1
 				""");
@@ -128,7 +149,7 @@ final class TinyToEnigmaConverterTest {
 
 		Files.writeString(input, """
 				tiny\t2\t0\tofficial\tintermediary
-				c\tcom/example/x\tClass123
+				c\tcom/example/Readable\tClass123
 				\tm\t(J)V\tc\tmethod_1
 				""");
 
