@@ -1,0 +1,11 @@
+pluginManagement {
+	repositories {
+		gradlePluginPortal()
+		mavenCentral()
+	}
+	plugins {
+		id 'com.gradleup.shadow' version "${shadow_version}"
+	}
+}
+
+rootProject.name = 'converter'

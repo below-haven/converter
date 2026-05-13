@@ -1,0 +1,59 @@
+plugins {
+	id 'application'
+	id 'java'
+	id 'com.gradleup.shadow'
+}
+
+base {
+	archivesName = archivesBaseName
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		name = 'Fabric'
+		url = 'https://maven.fabricmc.net/'
+	}
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+application {
+	mainClass = 'eu.ponei.converter.Main'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.encoding = 'UTF-8'
+	it.options.release = 25
+}
+
+dependencies {
+	implementation "net.fabricmc:mapping-io:${mappingio_version}"
+
+	testImplementation platform("org.junit:junit-bom:${junit_jupiter_version}")
+	testImplementation "org.junit.jupiter:junit-jupiter-api"
+	testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+jar {
+	manifest {
+		attributes 'Main-Class': application.mainClass.get()
+	}
+}
+
+shadowJar {
+	archiveClassifier = 'all'
+	archiveVersion = ''
+	manifest {
+		attributes 'Main-Class': application.mainClass.get()
+	}
+}
+
+test {
+	dependsOn tasks.named('shadowJar')
+	useJUnitPlatform()
+}
