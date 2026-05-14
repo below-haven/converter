@@ -93,12 +93,14 @@ final class MappingTreeModelReader {
 			int intermediaryNs,
 			String intermediaryClassName) throws ConversionException {
 		String officialFieldName = requireName(sourceField, officialNs, "field in " + intermediaryClassName);
+		boolean deobfuscated = ObfuscationHeuristic.memberNameLooksDeobfuscated(officialFieldName);
 
 		return new MappingModel.FieldEntry(
 				requireName(sourceField, intermediaryNs, "field in " + intermediaryClassName),
 				requireDesc(sourceField, intermediaryNs, "field " + sourceField.getSrcName() + " in " + intermediaryClassName),
-				deobfuscatedMemberName(officialFieldName),
-				sourceField.getComment());
+				deobfuscated ? officialFieldName : null,
+				sourceField.getComment(),
+				deobfuscated);
 	}
 
 	private MappingModel.MethodEntry readTinyMethod(

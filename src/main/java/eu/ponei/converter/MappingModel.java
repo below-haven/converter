@@ -142,8 +142,28 @@ final class MappingModel {
 	}
 
 	static final class FieldEntry extends MemberEntry {
+		private boolean writeWhenUnnamed;
+
 		FieldEntry(String intermediaryName, String intermediaryDesc, String namedName, String comment) {
+			this(intermediaryName, intermediaryDesc, namedName, comment, true);
+		}
+
+		FieldEntry(
+				String intermediaryName,
+				String intermediaryDesc,
+				String namedName,
+				String comment,
+				boolean writeWhenUnnamed) {
 			super(intermediaryName, intermediaryDesc, namedName, comment);
+			this.writeWhenUnnamed = writeWhenUnnamed;
+		}
+
+		boolean shouldWrite() {
+			return namedName() != null || writeWhenUnnamed;
+		}
+
+		void setWriteWhenUnnamed(boolean writeWhenUnnamed) {
+			this.writeWhenUnnamed = writeWhenUnnamed;
 		}
 	}
 

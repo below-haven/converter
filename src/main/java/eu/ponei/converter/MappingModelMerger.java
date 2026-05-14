@@ -20,7 +20,7 @@ final class MappingModelMerger {
 	}
 
 	private void preserveClass(MappingModel.ClassEntry currentClass, MappingModel.ClassEntry existingClass) {
-		if (existingClass.namedName() != null) {
+		if (isMeaningfulClassName(existingClass.namedName(), existingClass.intermediaryName())) {
 			currentClass.setNamedName(existingClass.namedName());
 		}
 
@@ -135,6 +135,10 @@ final class MappingModelMerger {
 
 		current.setComment(existing.comment());
 
+		if (current instanceof MappingModel.FieldEntry currentField && existing instanceof MappingModel.FieldEntry) {
+			currentField.setWriteWhenUnnamed(true);
+		}
+
 		if (current instanceof MappingModel.MethodEntry currentMethod && existing instanceof MappingModel.MethodEntry existingMethod) {
 			preserveMethodArgs(currentMethod, existingMethod);
 		}
@@ -153,6 +157,17 @@ final class MappingModelMerger {
 
 			currentArg.setComment(existingArg.comment());
 		}
+	}
+
+	private boolean isMeaningfulClassName(String namedName, String intermediaryName) {
+		return namedName != null && !innermostClassName(namedName).equals(innermostClassName(intermediaryName));
+	}
+
+	private String innermostClassName(String name) {
+		int innerClassIndex = name.lastIndexOf('$');
+		int packageIndex = name.lastIndexOf('/');
+		int index = Math.max(innerClassIndex, packageIndex);
+		return index >= 0 ? name.substring(index + 1) : name;
 	}
 
 	private interface ExactMemberLookup<T extends MappingModel.MemberEntry> {

@@ -38,7 +38,7 @@ final class TinyToEnigmaConverterTest {
 	}
 
 	@Test
-	void obfuscatedOfficialNamesStayUnmapped() throws Exception {
+	void obfuscatedOfficialFieldsAreSkippedButClassesAndMethodsStayUnmapped() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
 				c\ta/b/x\tClass123
@@ -51,11 +51,33 @@ final class TinyToEnigmaConverterTest {
 
 		String enigma = Files.readString(output);
 		assertTrue(enigma.contains("CLASS Class123\n"));
-		assertTrue(enigma.contains("FIELD field_1 I"));
 		assertTrue(enigma.contains("METHOD method_1 ()V"));
 		assertFalse(enigma.contains("a/b/x"));
-		assertFalse(enigma.contains("FIELD field_1 b I"));
+		assertFalse(enigma.contains("field_1"));
 		assertFalse(enigma.contains("METHOD method_1 a ()V"));
+	}
+
+	@Test
+	void obfuscatedOfficialFieldsKeepExistingManualEnigmaNames() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/Readable\tClass123
+				\tf\tI\tb\tfield_1
+				\tm\t()V\ta\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+		Files.writeString(output, """
+				CLASS Class123 com/example/Readable
+					FIELD field_1 oldField I
+					METHOD method_1 oldMethod ()V
+				""");
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS Class123 com/example/Readable"));
+		assertTrue(enigma.contains("FIELD field_1 oldField I"));
+		assertTrue(enigma.contains("METHOD method_1 oldMethod ()V"));
 	}
 
 	@Test
@@ -91,6 +113,28 @@ final class TinyToEnigmaConverterTest {
 	}
 
 	@Test
+	void unmappedInnerClassesUnderMappedOuterClassesStayUnmapped() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/Outer\tClass_182
+				c\tcom/example/Outer$A\tClass_182$Class_183
+				""");
+		Path output = tempDir.resolve("output.enigma");
+		Files.writeString(output, """
+				CLASS Class_182 com/example/Outer
+					CLASS Class_183
+				""");
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS Class_182 com/example/Outer"));
+		assertTrue(enigma.contains("\tCLASS Class_183\n"));
+		assertFalse(enigma.contains("\tCLASS Class_183 Class_183"));
+		assertFalse(enigma.contains("com/example/Outer$Class_183"));
+	}
+
+	@Test
 	void removedTinyEntriesDisappear() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
@@ -111,6 +155,75 @@ final class TinyToEnigmaConverterTest {
 		assertTrue(enigma.contains("CLASS Class123 com/example/Readable"));
 		assertFalse(enigma.contains("field_1"));
 		assertFalse(enigma.contains("Class456"));
+	}
+
+	@Test
+	void membersAreWrittenInSourceOrderAfterMerge() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/Readable\tClass123
+				\tf\tI\tfieldTwo\tfield_2
+				\tf\tZ\tfieldOneBoolean\tfield_1
+				\tf\tI\tfieldOneInt\tfield_1
+				\tf\tI\tfieldThree\tfield_3
+				""");
+		Path output = tempDir.resolve("output.enigma");
+		Files.writeString(output, """
+				CLASS Class123 com/example/Readable
+					FIELD field_2 oldTwo I
+					FIELD field_1 oldBoolean Z
+					FIELD field_1 oldInt I
+				""");
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		int fieldOneInt = enigma.indexOf("FIELD field_1 oldInt I");
+		int fieldOneBoolean = enigma.indexOf("FIELD field_1 oldBoolean Z");
+		int fieldTwo = enigma.indexOf("FIELD field_2 oldTwo I");
+		int fieldThree = enigma.indexOf("FIELD field_3 fieldThree I");
+		assertTrue(fieldOneInt > 0);
+		assertTrue(fieldOneInt < fieldOneBoolean);
+		assertTrue(fieldOneBoolean < fieldTwo);
+		assertTrue(fieldTwo < fieldThree);
+	}
+
+	@Test
+	void writerOrdersClassesMembersAndLocalsBySource() throws Exception {
+		MappingModel model = new MappingModel();
+		MappingModel.ClassEntry classB = new MappingModel.ClassEntry("ClassB", "com/example/B", null);
+		MappingModel.ClassEntry class1001 = new MappingModel.ClassEntry("Class1001", "com/example/Class1001", null);
+		MappingModel.ClassEntry class101 = new MappingModel.ClassEntry("Class101", "com/example/Class101", null);
+		MappingModel.ClassEntry class100 = new MappingModel.ClassEntry("Class100", "com/example/Class100", null);
+		classB.addField(new MappingModel.FieldEntry("field_z", "J", "fieldZ", null));
+		classB.addField(new MappingModel.FieldEntry("field_a", "Z", "fieldABoolean", null));
+		classB.addField(new MappingModel.FieldEntry("field_a", "I", "fieldAInt", null));
+		classB.addMethod(new MappingModel.MethodEntry("method_z", "()V", "methodZ", null));
+		MappingModel.MethodEntry methodAObject = new MappingModel.MethodEntry("method_a", "(Ljava/lang/String;)V", "methodAObject", null);
+		methodAObject.addArg(new MappingModel.ArgEntry(3, "localThree", null));
+		methodAObject.addArg(new MappingModel.ArgEntry(1, "localOne", null));
+		classB.addMethod(methodAObject);
+		classB.addMethod(new MappingModel.MethodEntry("method_a", "(I)V", "methodAInt", null));
+		model.addClass(classB);
+		model.addClass(class1001);
+		model.addClass(class101);
+		model.addClass(class100);
+		model.addClass(new MappingModel.ClassEntry("ClassA", "com/example/A", null));
+		Path output = tempDir.resolve("output.enigma");
+
+		new EnigmaModelWriter().writeAtomically(model, output);
+
+		String enigma = Files.readString(output);
+		assertOrder(enigma, "CLASS Class100", "CLASS Class101", "CLASS Class1001", "CLASS ClassA", "CLASS ClassB");
+		assertOrder(enigma,
+				"FIELD field_a fieldAInt I",
+				"FIELD field_a fieldABoolean Z",
+				"FIELD field_z fieldZ J");
+		assertOrder(enigma,
+				"METHOD method_a methodAInt (I)V",
+				"METHOD method_a methodAObject (Ljava/lang/String;)V",
+				"METHOD method_z methodZ ()V");
+		assertOrder(enigma, "localOne", "localThree");
 	}
 
 	@Test
@@ -201,6 +314,18 @@ final class TinyToEnigmaConverterTest {
 
 	private PrintStream err() {
 		return new PrintStream(new ByteArrayOutputStream());
+	}
+
+	private void assertOrder(String text, String first, String... rest) {
+		int previous = text.indexOf(first);
+		assertTrue(previous >= 0, first);
+
+		for (String value : rest) {
+			int current = text.indexOf(value);
+			assertTrue(current >= 0, value);
+			assertTrue(previous < current, first + " should come before " + value);
+			previous = current;
+		}
 	}
 
 	private static final class MainForTest {
