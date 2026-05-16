@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Set;
 
 final class MappingModelMerger {
+	private static final String CONSTRUCTOR_NAME = "<init>";
+
 	void mergeInto(MappingModel current, MappingModel existing) throws ConversionException {
 		for (MappingModel.ClassEntry currentClass : current.classes()) {
 			MappingModel.ClassEntry existingClass = existing.classByIntermediary(currentClass.intermediaryName());
@@ -41,15 +43,16 @@ final class MappingModelMerger {
 	private void mergeMethods(
 			MappingModel.ClassEntry currentClass,
 			MappingModel.ClassEntry existingClass) throws ConversionException {
-		mergeMembers(
+		Set<MappingModel.MethodEntry> usedExisting = mergeMembers(
 				currentClass.intermediaryName(),
 				"method",
 				currentClass.methods(),
 				existingClass.methods(),
 				existingClass::methodByExactKey);
+		preserveExistingConstructors(currentClass, existingClass, usedExisting);
 	}
 
-	private <T extends MappingModel.MemberEntry> void mergeMembers(
+	private <T extends MappingModel.MemberEntry> Set<T> mergeMembers(
 			String owner,
 			String kind,
 			List<T> currentMembers,
@@ -93,6 +96,8 @@ final class MappingModelMerger {
 			migrated.add(currentCandidate);
 			usedExisting.add(existingCandidate);
 		}
+
+		return usedExisting;
 	}
 
 	private <T extends MappingModel.MemberEntry> List<T> unmatchedByName(
@@ -145,9 +150,13 @@ final class MappingModelMerger {
 	}
 
 	private void preserveMethodArgs(MappingModel.MethodEntry currentMethod, MappingModel.MethodEntry existingMethod) {
-		for (MappingModel.ArgEntry currentArg : currentMethod.args()) {
-			MappingModel.ArgEntry existingArg = existingMethod.argByLvIndex(currentArg.lvIndex());
-			if (existingArg == null) {
+		for (MappingModel.ArgEntry existingArg : existingMethod.args()) {
+			MappingModel.ArgEntry currentArg = currentMethod.argByLvIndex(existingArg.lvIndex());
+			if (currentArg == null) {
+				currentMethod.addArg(new MappingModel.ArgEntry(
+						existingArg.lvIndex(),
+						existingArg.namedName(),
+						existingArg.comment()));
 				continue;
 			}
 
@@ -157,6 +166,34 @@ final class MappingModelMerger {
 
 			currentArg.setComment(existingArg.comment());
 		}
+	}
+
+	private void preserveExistingConstructors(
+			MappingModel.ClassEntry currentClass,
+			MappingModel.ClassEntry existingClass,
+			Set<MappingModel.MethodEntry> usedExisting) throws ConversionException {
+		for (MappingModel.MethodEntry existingMethod : existingClass.methods()) {
+			if (usedExisting.contains(existingMethod)
+					|| !existingMethod.intermediaryName().equals(CONSTRUCTOR_NAME)) {
+				continue;
+			}
+
+			currentClass.addMethod(copyMethod(existingMethod));
+		}
+	}
+
+	private MappingModel.MethodEntry copyMethod(MappingModel.MethodEntry method) {
+		MappingModel.MethodEntry copy = new MappingModel.MethodEntry(
+				method.intermediaryName(),
+				method.intermediaryDesc(),
+				method.namedName(),
+				method.comment());
+
+		for (MappingModel.ArgEntry arg : method.args()) {
+			copy.addArg(new MappingModel.ArgEntry(arg.lvIndex(), arg.namedName(), arg.comment()));
+		}
+
+		return copy;
 	}
 
 	private boolean isMeaningfulClassName(String namedName, String intermediaryName) {

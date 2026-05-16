@@ -81,6 +81,68 @@ final class TinyToEnigmaConverterTest {
 	}
 
 	@Test
+	void existingManualEnigmaArgsSurviveTinyWithoutArgs() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/Readable\tClass123
+				\tm\t(Ljava/lang/String;I)V\tmethodReadable\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+		MappingModel model = new MappingModel();
+		MappingModel.ClassEntry classEntry = new MappingModel.ClassEntry("Class123", "com/example/Readable", null);
+		MappingModel.MethodEntry methodEntry = new MappingModel.MethodEntry(
+				"method_1",
+				"(Ljava/lang/String;I)V",
+				"oldMethod",
+				null);
+		methodEntry.addArg(new MappingModel.ArgEntry(2, "count", null));
+		methodEntry.addArg(new MappingModel.ArgEntry(1, "text", null));
+		classEntry.addMethod(methodEntry);
+		model.addClass(classEntry);
+		new EnigmaModelWriter().writeAtomically(model, output);
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("METHOD method_1 oldMethod (Ljava/lang/String;I)V"));
+		assertTrue(enigma.contains("text"));
+		assertTrue(enigma.contains("count"));
+		assertOrder(enigma, "text", "count");
+	}
+
+	@Test
+	void existingEnigmaConstructorsSurviveTinyWithoutConstructors() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/Readable\tClass123
+				\tm\t()V\tmethodReadable\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+		MappingModel model = new MappingModel();
+		MappingModel.ClassEntry classEntry = new MappingModel.ClassEntry("Class123", "com/example/Readable", null);
+		MappingModel.MethodEntry constructor = new MappingModel.MethodEntry(
+				"<init>",
+				"(Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+				null,
+				null);
+		constructor.addArg(new MappingModel.ArgEntry(1, "username", null));
+		constructor.addArg(new MappingModel.ArgEntry(2, "password", null));
+		constructor.addArg(new MappingModel.ArgEntry(3, "encrypted", null));
+		classEntry.addMethod(constructor);
+		model.addClass(classEntry);
+		new EnigmaModelWriter().writeAtomically(model, output);
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("METHOD <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"));
+		assertTrue(enigma.contains("ARG 1 username"));
+		assertTrue(enigma.contains("ARG 2 password"));
+		assertTrue(enigma.contains("ARG 3 encrypted"));
+		assertTrue(enigma.contains("METHOD method_1 methodReadable ()V"));
+	}
+
+	@Test
 	void existingManualNamesSurviveOfficialNameChanges() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
