@@ -2,13 +2,16 @@ package eu.ponei.converter;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 final class MappingModel {
 	private final List<ClassEntry> classes = new ArrayList<>();
 	private final Map<String, ClassEntry> classesByIntermediary = new LinkedHashMap<>();
+	private final Map<String, ClassEntry> classesByUnqualifiedIntermediary = new LinkedHashMap<>();
 
 	List<ClassEntry> classes() {
 		return classes;
@@ -20,6 +23,13 @@ final class MappingModel {
 			throw new ConversionException("Duplicate class mapping for " + entry.intermediaryName());
 		}
 
+		String unqualifiedName = entry.unqualifiedIntermediaryName();
+		if (classesByUnqualifiedIntermediary.containsKey(unqualifiedName)) {
+			classesByUnqualifiedIntermediary.put(unqualifiedName, null);
+		} else {
+			classesByUnqualifiedIntermediary.put(unqualifiedName, entry);
+		}
+
 		classes.add(entry);
 	}
 
@@ -27,8 +37,14 @@ final class MappingModel {
 		return classesByIntermediary.get(intermediaryName);
 	}
 
+	ClassEntry classByUnqualifiedIntermediary(String intermediaryName) {
+		return classesByUnqualifiedIntermediary.get(intermediaryName);
+	}
+
 	static final class ClassEntry {
 		private final String intermediaryName;
+		private final String unqualifiedIntermediaryName;
+		private final Set<String> automaticNamedNames;
 		private String namedName;
 		private String comment;
 		private final List<FieldEntry> fields = new ArrayList<>();
@@ -37,7 +53,22 @@ final class MappingModel {
 		private final Map<MemberKey, MethodEntry> methodsByExactKey = new LinkedHashMap<>();
 
 		ClassEntry(String intermediaryName, String namedName, String comment) {
+			this(intermediaryName, unqualifiedName(intermediaryName), namedName, comment, Set.of());
+		}
+
+		ClassEntry(String intermediaryName, String unqualifiedIntermediaryName, String namedName, String comment) {
+			this(intermediaryName, unqualifiedIntermediaryName, namedName, comment, Set.of());
+		}
+
+		ClassEntry(
+				String intermediaryName,
+				String unqualifiedIntermediaryName,
+				String namedName,
+				String comment,
+				Set<String> automaticNamedNames) {
 			this.intermediaryName = intermediaryName;
+			this.unqualifiedIntermediaryName = unqualifiedIntermediaryName;
+			this.automaticNamedNames = new LinkedHashSet<>(automaticNamedNames);
 			this.namedName = namedName;
 			this.comment = comment;
 		}
@@ -46,8 +77,16 @@ final class MappingModel {
 			return intermediaryName;
 		}
 
+		String unqualifiedIntermediaryName() {
+			return unqualifiedIntermediaryName;
+		}
+
 		String namedName() {
 			return namedName;
+		}
+
+		boolean isAutomaticNamedName(String namedName) {
+			return namedName != null && automaticNamedNames.contains(namedName);
 		}
 
 		void setNamedName(String namedName) {
@@ -228,5 +267,10 @@ final class MappingModel {
 		public String toString() {
 			return intermediaryName + " " + Objects.toString(intermediaryDesc, "<no-desc>");
 		}
+	}
+
+	private static String unqualifiedName(String name) {
+		int packageIndex = name.lastIndexOf('/');
+		return packageIndex >= 0 ? name.substring(packageIndex + 1) : name;
 	}
 }

@@ -19,6 +19,10 @@ import net.fabricmc.mappingio.tree.MemoryMappingTree;
 
 final class MappingTreeModelReader {
 	MappingModel readTiny(Path input) throws ConversionException {
+		return readTiny(input, false);
+	}
+
+	MappingModel readTiny(Path input, boolean addPackagePrefix) throws ConversionException {
 		MemoryMappingTree tree = new MemoryMappingTree();
 
 		try {
@@ -28,7 +32,7 @@ final class MappingTreeModelReader {
 		}
 
 		validateTinyNamespaces(tree);
-		return readTinyModel(tree);
+		return readTinyModel(tree, addPackagePrefix);
 	}
 
 	MappingModel readEnigma(Path input) throws ConversionException {
@@ -53,13 +57,13 @@ final class MappingTreeModelReader {
 		}
 	}
 
-	private MappingModel readTinyModel(MappingTreeView tree) throws ConversionException {
+	private MappingModel readTinyModel(MappingTreeView tree, boolean addPackagePrefix) throws ConversionException {
 		int officialNs = namespaceId(tree, OFFICIAL);
 		int intermediaryNs = namespaceId(tree, INTERMEDIARY);
 		MappingModel model = new MappingModel();
 
 		for (MappingTreeView.ClassMappingView sourceClass : tree.getClasses()) {
-			model.addClass(readTinyClass(sourceClass, officialNs, intermediaryNs));
+			model.addClass(readTinyClass(sourceClass, officialNs, intermediaryNs, addPackagePrefix));
 		}
 
 		return model;
@@ -68,13 +72,17 @@ final class MappingTreeModelReader {
 	private MappingModel.ClassEntry readTinyClass(
 			MappingTreeView.ClassMappingView sourceClass,
 			int officialNs,
-			int intermediaryNs) throws ConversionException {
+			int intermediaryNs,
+			boolean addPackagePrefix) throws ConversionException {
 		String intermediaryClassName = requireName(sourceClass, intermediaryNs, "class");
 		String officialClassName = requireName(sourceClass, officialNs, "class");
+		String packagePrefixedIntermediaryName = prefixedIntermediaryName(officialClassName, intermediaryClassName, addPackagePrefix);
 		MappingModel.ClassEntry classEntry = new MappingModel.ClassEntry(
 				intermediaryClassName,
-				deobfuscatedClassName(officialClassName),
-				sourceClass.getComment());
+				intermediaryClassName,
+				tinyClassTargetName(officialClassName, intermediaryClassName, packagePrefixedIntermediaryName, addPackagePrefix),
+				sourceClass.getComment(),
+				automaticClassTargetNames(officialClassName, intermediaryClassName, packagePrefixedIntermediaryName));
 
 		for (MappingTreeView.FieldMappingView sourceField : sourceClass.getFields()) {
 			classEntry.addField(readTinyField(sourceField, officialNs, intermediaryNs, intermediaryClassName));
@@ -93,7 +101,7 @@ final class MappingTreeModelReader {
 			int intermediaryNs,
 			String intermediaryClassName) throws ConversionException {
 		String officialFieldName = requireName(sourceField, officialNs, "field in " + intermediaryClassName);
-		boolean deobfuscated = ObfuscationHeuristic.memberNameLooksDeobfuscated(officialFieldName);
+		boolean deobfuscated = ObfuscationHeuristic.fieldNameLooksDeobfuscated(officialFieldName);
 
 		return new MappingModel.FieldEntry(
 				requireName(sourceField, intermediaryNs, "field in " + intermediaryClassName),
@@ -242,5 +250,50 @@ final class MappingTreeModelReader {
 
 	private String deobfuscatedMemberName(String officialName) {
 		return ObfuscationHeuristic.memberNameLooksDeobfuscated(officialName) ? officialName : null;
+	}
+
+	private String tinyClassTargetName(
+			String officialClassName,
+			String intermediaryClassName,
+			String packagePrefixedIntermediaryName,
+			boolean addPackagePrefix) {
+		if (addPackagePrefix && !packagePrefixedIntermediaryName.equals(intermediaryClassName)) {
+			return packagePrefixedIntermediaryName;
+		}
+
+		return deobfuscatedClassName(officialClassName);
+	}
+
+	private Set<String> automaticClassTargetNames(
+			String officialClassName,
+			String intermediaryClassName,
+			String packagePrefixedIntermediaryName) {
+		Set<String> names = new LinkedHashSet<>();
+		String deobfuscatedClassName = deobfuscatedClassName(officialClassName);
+		if (deobfuscatedClassName != null) {
+			names.add(deobfuscatedClassName);
+		}
+
+		if (!packagePrefixedIntermediaryName.equals(intermediaryClassName)) {
+			names.add(packagePrefixedIntermediaryName);
+		}
+
+		return names;
+	}
+
+	private String prefixedIntermediaryName(
+			String officialClassName,
+			String intermediaryClassName,
+			boolean addPackagePrefix) {
+		if (!addPackagePrefix) {
+			return intermediaryClassName;
+		}
+
+		int packageIndex = officialClassName.lastIndexOf('/');
+		if (packageIndex < 0) {
+			return intermediaryClassName;
+		}
+
+		return officialClassName.substring(0, packageIndex + 1) + intermediaryClassName;
 	}
 }

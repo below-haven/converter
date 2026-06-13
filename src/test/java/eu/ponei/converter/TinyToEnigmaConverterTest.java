@@ -38,6 +38,25 @@ final class TinyToEnigmaConverterTest {
 	}
 
 	@Test
+	void addPackagePrefixAddsSyntheticClassTargetWithoutChangingSources() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/ab\tClass1
+				\tf\tLcom/example/ab;\treadableField\tfield_1
+				\tm\t(Lcom/example/ab;)V\ta\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output, true);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS Class1 com/example/Class1"));
+		assertTrue(enigma.contains("FIELD field_1 readableField LClass1;"));
+		assertTrue(enigma.contains("METHOD method_1 (LClass1;)V"));
+		assertFalse(enigma.contains("com/example/ab"));
+	}
+
+	@Test
 	void obfuscatedOfficialFieldsAreSkippedButClassesAndMethodsStayUnmapped() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
@@ -55,6 +74,26 @@ final class TinyToEnigmaConverterTest {
 		assertFalse(enigma.contains("a/b/x"));
 		assertFalse(enigma.contains("field_1"));
 		assertFalse(enigma.contains("METHOD method_1 a ()V"));
+	}
+
+	@Test
+	void underscoreOfficialFieldsAreMappedWithoutAffectingClassesOrMethods() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\t_/x\tClass123
+				\tf\tI\t_x\tfield_1
+				\tm\t()V\t_y\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS Class123\n"));
+		assertTrue(enigma.contains("FIELD field_1 _x I"));
+		assertTrue(enigma.contains("METHOD method_1 ()V"));
+		assertFalse(enigma.contains("CLASS Class123 _/x"));
+		assertFalse(enigma.contains("METHOD method_1 _y ()V"));
 	}
 
 	@Test
@@ -108,6 +147,57 @@ final class TinyToEnigmaConverterTest {
 		assertTrue(enigma.contains("text"));
 		assertTrue(enigma.contains("count"));
 		assertOrder(enigma, "text", "count");
+	}
+
+	@Test
+	void addPackagePrefixCanBeToggledOffWithoutChangingOriginalOutput() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/ab\tClass1
+				\tf\tLcom/example/ab;\treadableField\tfield_1
+				\tm\t(Lcom/example/ab;)V\ta\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output);
+		String original = Files.readString(output);
+
+		new TinyToEnigmaConverter().convert(input, output, true);
+		assertTrue(Files.readString(output).contains("CLASS Class1 com/example/Class1"));
+
+		new TinyToEnigmaConverter().convert(input, output);
+
+		assertEquals(original, Files.readString(output));
+	}
+
+	@Test
+	void addPackagePrefixTogglePreservesOverloadedMethodNamesByNormalizedDescriptor() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/a\tClassA
+				c\tcom/example/b\tClassB
+				c\tcom/example/owner\tOwner
+				\tm\t(Lcom/example/a;)V\ta\tmethod_1
+				\tm\t(Lcom/example/b;)V\tb\tmethod_1
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output);
+		Files.writeString(output, Files.readString(output)
+				.replace("METHOD method_1 (LClassA;)V", "METHOD method_1 first (LClassA;)V")
+				.replace("METHOD method_1 (LClassB;)V", "METHOD method_1 second (LClassB;)V"));
+
+		new TinyToEnigmaConverter().convert(input, output, true);
+		String prefixed = Files.readString(output);
+		assertTrue(prefixed.contains("CLASS ClassA com/example/ClassA"));
+		assertTrue(prefixed.contains("CLASS ClassB com/example/ClassB"));
+		assertTrue(prefixed.contains("METHOD method_1 first (LClassA;)V"));
+		assertTrue(prefixed.contains("METHOD method_1 second (LClassB;)V"));
+
+		new TinyToEnigmaConverter().convert(input, output);
+		String unprefixed = Files.readString(output);
+		assertTrue(unprefixed.contains("METHOD method_1 first (LClassA;)V"));
+		assertTrue(unprefixed.contains("METHOD method_1 second (LClassB;)V"));
 	}
 
 	@Test
@@ -351,6 +441,30 @@ final class TinyToEnigmaConverterTest {
 
 		assertEquals(2, main.run(java.util.List.of("nope"), out(), err()));
 		assertEquals(2, main.run(java.util.List.of("tiny-to-enigma", "only-input.tiny"), out(), err()));
+	}
+
+	@Test
+	void cliAcceptsAddPackagePrefixFlagAndDefaultsToCurrentBehavior() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tcom/example/ab\tClass1
+				""");
+		Path unprefixedOutput = tempDir.resolve("unprefixed.enigma");
+		Path prefixedOutput = tempDir.resolve("prefixed.enigma");
+		Main main = new MainForTest().main();
+
+		assertEquals(0, main.run(java.util.List.of(
+				"tiny-to-enigma",
+				input.toString(),
+				unprefixedOutput.toString()), out(), err()));
+		assertEquals(0, main.run(java.util.List.of(
+				"tiny-to-enigma",
+				"--add-package-prefix",
+				input.toString(),
+				prefixedOutput.toString()), out(), err()));
+
+		assertTrue(Files.readString(unprefixedOutput).contains("CLASS Class1\n"));
+		assertTrue(Files.readString(prefixedOutput).contains("CLASS Class1 com/example/Class1"));
 	}
 
 	@Test

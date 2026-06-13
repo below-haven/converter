@@ -17,6 +17,10 @@ final class ObfuscationHeuristic {
 		return !name.startsWith("<") && name.length() >= MIN_DEOBFUSCATED_MEMBER_NAME_LENGTH;
 	}
 
+	static boolean fieldNameLooksDeobfuscated(String name) {
+		return name.startsWith("_") || memberNameLooksDeobfuscated(name);
+	}
+
 	private static String substringAfterLast(String value, char separator) {
 		int index = value.lastIndexOf(separator);
 		return index >= 0 ? value.substring(index + 1) : value;
