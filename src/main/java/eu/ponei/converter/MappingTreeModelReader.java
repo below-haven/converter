@@ -258,7 +258,8 @@ final class MappingTreeModelReader {
 			String packagePrefixedIntermediaryName,
 			boolean addPackagePrefix) {
 		if (addPackagePrefix && !packagePrefixedIntermediaryName.equals(intermediaryClassName)) {
-			return packagePrefixedIntermediaryName;
+			String deobfuscatedClassName = deobfuscatedClassName(officialClassName);
+			return deobfuscatedClassName != null ? deobfuscatedClassName : packagePrefixedIntermediaryName;
 		}
 
 		return deobfuscatedClassName(officialClassName);
@@ -289,11 +290,23 @@ final class MappingTreeModelReader {
 			return intermediaryClassName;
 		}
 
+		// Inner classes are written nested in Enigma, so only their simple name matters and the
+		// package is implied by the outer class. Prefixing them produces a redundant duplicate name.
+		if (intermediaryClassName.indexOf('$') >= 0) {
+			return intermediaryClassName;
+		}
+
 		int packageIndex = officialClassName.lastIndexOf('/');
 		if (packageIndex < 0) {
 			return intermediaryClassName;
 		}
 
-		return officialClassName.substring(0, packageIndex + 1) + intermediaryClassName;
+		String officialPackage = officialClassName.substring(0, packageIndex + 1);
+		return officialPackage + unqualifiedClassName(intermediaryClassName);
+	}
+
+	private String unqualifiedClassName(String name) {
+		int packageIndex = name.lastIndexOf('/');
+		return packageIndex >= 0 ? name.substring(packageIndex + 1) : name;
 	}
 }

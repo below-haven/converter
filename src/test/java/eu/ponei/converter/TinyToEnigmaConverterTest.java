@@ -57,6 +57,55 @@ final class TinyToEnigmaConverterTest {
 	}
 
 	@Test
+	void addPackagePrefixUsesOnlyClassNameAfterOfficialPackage() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tca/beq/util/win32/registry/x\tgame/Class_8
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output, true);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS game/Class_8 ca/beq/util/win32/registry/Class_8"));
+		assertFalse(enigma.contains("ca/beq/util/win32/registry/game/Class_8"));
+	}
+
+	@Test
+	void addPackagePrefixKeepsDeobfuscatedOfficialNames() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tca/beq/util/win32/registry/RegistryException\tgame/Class_7
+				""");
+		Path output = tempDir.resolve("output.enigma");
+		Files.writeString(output, """
+				CLASS game/Class_7 ca/beq/util/win32/registry/RegistryException
+				""");
+
+		new TinyToEnigmaConverter().convert(input, output, true);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS game/Class_7 ca/beq/util/win32/registry/RegistryException"));
+		assertFalse(enigma.contains("ca/beq/util/win32/registry/game/Class_7"));
+	}
+
+	@Test
+	void addPackagePrefixDoesNotDuplicateInnerClassNames() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\tca/beq/util/win32/registry/o\tgame/Class_210
+				c\tca/beq/util/win32/registry/o$a\tgame/Class_210$Class_211
+				""");
+		Path output = tempDir.resolve("output.enigma");
+
+		new TinyToEnigmaConverter().convert(input, output, true);
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("\tCLASS Class_211\n"));
+		assertFalse(enigma.contains("\tCLASS Class_211 Class_211"));
+	}
+
+	@Test
 	void obfuscatedOfficialFieldsAreSkippedButClassesAndMethodsStayUnmapped() throws Exception {
 		Path input = tiny("""
 				tiny\t2\t0\tofficial\tintermediary
