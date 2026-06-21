@@ -18,7 +18,7 @@ public final class Main {
 	}
 
 	public static void main(String[] args) {
-		int status = new Main(List.of(new TinyToEnigmaCommand()))
+		int status = new Main(List.of(new TinyToEnigmaCommand(), new PrefixClassesCommand()))
 				.run(Arrays.asList(args), System.out, System.err);
 		System.exit(status);
 	}

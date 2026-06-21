@@ -468,6 +468,132 @@ final class TinyToEnigmaConverterTest {
 	}
 
 	@Test
+	void prefixClassesCliValidatesArgumentsAndPrefix() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\ta/b/C\tClass1
+				""");
+		Path unsupportedInput = tempDir.resolve("input.txt");
+		Files.writeString(unsupportedInput, Files.readString(input), StandardCharsets.UTF_8);
+		Main main = new MainForTest().main();
+
+		assertEquals(2, main.run(java.util.List.of("prefix-classes", "com/game", input.toString()), out(), err()));
+		assertEquals(1, main.run(java.util.List.of(
+				"prefix-classes",
+				"com.game",
+				input.toString(),
+				tempDir.resolve("output.tiny").toString()), out(), err()));
+		assertEquals(1, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game",
+				unsupportedInput.toString(),
+				tempDir.resolve("output.txt").toString()), out(), err()));
+		assertEquals(1, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game",
+				input.toString(),
+				tempDir.resolve("output.txt").toString()), out(), err()));
+		assertEquals(1, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game",
+				input.toString(),
+				input.toString()), out(), err()));
+	}
+
+	@Test
+	void prefixClassesPrefixesTinyIntermediaryClasses() throws Exception {
+		Path input = tiny("""
+				tiny\t2\t0\tofficial\tintermediary
+				c\ta/b/C\tClass1
+				c\ta/b/D\tcom/game/Class2
+				""");
+		Path output = tempDir.resolve("output.tiny");
+		Main main = new MainForTest().main();
+
+		assertEquals(0, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game/",
+				input.toString(),
+				output.toString()), out(), err()));
+
+		String tiny = Files.readString(output);
+		assertTrue(tiny.contains("c\ta/b/C\tcom/game/Class1"));
+		assertTrue(tiny.contains("c\ta/b/D\tcom/game/Class2"));
+		assertFalse(tiny.contains("com/game/com/game/Class2"));
+	}
+
+	@Test
+	void prefixClassesPrefixesEnigmaClassesAndDescriptors() throws Exception {
+		Path input = enigma("""
+				CLASS Class_1412 Readable
+					FIELD field_10178 TIMINGS LClass_3946;
+					FIELD field_2 stringField Ljava/lang/String;
+					METHOD method_12523 readableMethod ([LClass_1412;LClass_3946;Ljava/lang/String;)V
+						ARG 1 value
+				CLASS Class_3946
+				""");
+		Path output = tempDir.resolve("output.mapping");
+		Main main = new MainForTest().main();
+
+		assertEquals(0, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game",
+				input.toString(),
+				output.toString()), out(), err()));
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS com/game/Class_1412 Readable"));
+		assertTrue(enigma.contains("CLASS com/game/Class_3946\n"));
+		assertTrue(enigma.contains("FIELD field_10178 TIMINGS Lcom/game/Class_3946;"));
+		assertTrue(enigma.contains("FIELD field_2 stringField Ljava/lang/String;"));
+		assertTrue(enigma.contains("METHOD method_12523 readableMethod ([Lcom/game/Class_1412;Lcom/game/Class_3946;Ljava/lang/String;)V"));
+		assertTrue(enigma.contains("ARG 1 value"));
+	}
+
+	@Test
+	void prefixClassesDoesNotDoublePrefixEnigmaClasses() throws Exception {
+		Path input = enigma("""
+				CLASS com/game/Class_1412
+					FIELD field_10178 Lcom/game/Class_1412;
+				""");
+		Path output = tempDir.resolve("output.mapping");
+		Main main = new MainForTest().main();
+
+		assertEquals(0, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game",
+				input.toString(),
+				output.toString()), out(), err()));
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS com/game/Class_1412\n"));
+		assertTrue(enigma.contains("FIELD field_10178 Lcom/game/Class_1412;"));
+		assertFalse(enigma.contains("com/game/com/game/Class_1412"));
+	}
+
+	@Test
+	void prefixClassesDoesNotWriteRedundantInnerClassNames() throws Exception {
+		Path input = enigma("""
+				CLASS Class1 com/game/Class1
+					CLASS 1
+				""");
+		Path output = tempDir.resolve("output.mapping");
+		Main main = new MainForTest().main();
+
+		assertEquals(0, main.run(java.util.List.of(
+				"prefix-classes",
+				"com/game",
+				input.toString(),
+				output.toString()), out(), err()));
+
+		String enigma = Files.readString(output);
+		assertTrue(enigma.contains("CLASS com/game/Class1\n"));
+		assertTrue(enigma.contains("\tCLASS 1\n"));
+		assertFalse(enigma.contains("CLASS com/game/Class1 com/game/Class1"));
+		assertFalse(enigma.contains("\tCLASS 1 1"));
+	}
+
+	@Test
 	void shadowJarProducesExecutableJar() throws Exception {
 		Path jar = Path.of("build/libs/converter-all.jar");
 		assertTrue(Files.isRegularFile(jar), "shadow jar should be built before tests");
@@ -480,6 +606,12 @@ final class TinyToEnigmaConverterTest {
 
 	private Path tiny(String content) throws Exception {
 		Path input = tempDir.resolve("input.tiny");
+		Files.writeString(input, content, StandardCharsets.UTF_8);
+		return input;
+	}
+
+	private Path enigma(String content) throws Exception {
+		Path input = tempDir.resolve("input.mapping");
 		Files.writeString(input, content, StandardCharsets.UTF_8);
 		return input;
 	}
@@ -506,7 +638,7 @@ final class TinyToEnigmaConverterTest {
 
 	private static final class MainForTest {
 		private Main main() {
-			return new Main(java.util.List.of(new TinyToEnigmaCommand()));
+			return new Main(java.util.List.of(new TinyToEnigmaCommand(), new PrefixClassesCommand()));
 		}
 	}
 }
